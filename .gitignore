@@ -1,0 +1,31 @@
+# 依赖
+node_modules/
+
+# 构建产物
+out/
+dist/
+
+# 日志
+*.log
+logs/
+
+# Office 临时锁文件（如 ~$书阅读器开发计划.docx）
+~$*
+*.docx
+
+# 环境变量 / 密钥
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# WorkBuddy 会话数据（AI 记忆/任务缓存，非项目源码）
+.workbuddy/
+
+# EPUB 测试文件（如有不想入库的样书，可按需取消注释）
+*.epub
