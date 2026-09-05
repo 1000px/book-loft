@@ -2,6 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import ePub from 'epubjs'
 import { FONT_SIZE_DEFAULT } from '../config'
 import { looksLikeCover, applyCoverFit } from '../cover'
+import { getAnnotationPalette } from '../annotationColors'
+import {
+  applyAnnoStyle,
+  wrapRange,
+  findTextRange,
+  clearAllAnnoSpans,
+  clearAnnoSpansById,
+  attachAnnoHoverDelete
+} from '../annotationWrap'
+import SelectionBar from './annotation/SelectionBar.jsx'
+import HighlightPicker from './annotation/HighlightPicker.jsx'
+import UnderlinePicker from './annotation/UnderlinePicker.jsx'
+import AnnotationEditor from './annotation/AnnotationEditor.jsx'
+import NoteEditor from './annotation/NoteEditor.jsx'
+import AnnoViewer from './annotation/AnnoViewer.jsx'
 // 递归扁平化目录树，保留层级信息便于渲染与高亮匹配
 function flattenToc(items, depth = 0, acc = []) {
   if (!items) return acc
@@ -176,6 +191,122 @@ const CHAPTER_END_CSS = `
   }
 `
 
+// 在 book.navigation.toc 里按 href 找到最长前缀匹配的章节（用于标注记录章节名/锚点）
+function findChapterByHref(href, book) {
+  if (!href || !book?.navigation?.toc) return { title: '', href: '' }
+  const target = String(href).split('#')[0].replace(/^\.\//, '').toLowerCase()
+  if (!target) return { title: '', href: '' }
+  let best = { title: '', href: '' }, bestLen = -1
+  function walk(items) {
+    if (!Array.isArray(items)) return
+    for (const it of items) {
+      const h = String(it.href || '').split('#')[0].replace(/^\.\//, '').toLowerCase()
+      if (h && (target === h || target.endsWith('/' + h) || target.endsWith(h))) {
+        if (h.length > bestLen) {
+          best = { title: (it.label || '').trim(), href: it.href || '' }
+          bestLen = h.length
+        }
+      }
+      if (it.subitems) walk(it.subitems)
+    }
+  }
+  walk(book.navigation.toc)
+  return best
+}
+
+// 把当前标注列表应用到刚渲染出来的章节内容上。
+// 优先按 CFI 反查 Range（精确），失败则按 selectedText 在章节内做文本兜底匹配。
+// 进入前先清掉旧包络 + marker，避免重复应用产生嵌套。
+function applyAnnotationsToSection(contents, annotations, theme) {
+  if (!contents || !contents.document || !Array.isArray(annotations)) return
+  const idx = contents.sectionIndex
+  const doc = contents.document
+  try { clearAllAnnoSpans(doc) } catch (_) {}
+  for (const anno of annotations) {
+    if (anno.spineIndex !== idx) continue
+    let range = null
+    try {
+      const s = anno.cfiStart ? contents.rangeFromCfi(anno.cfiStart) : null
+      const e = anno.cfiEnd ? contents.rangeFromCfi(anno.cfiEnd) : null
+      if (s && e) {
+        range = doc.createRange()
+        range.setStart(s.startContainer, s.startOffset)
+        range.setEnd(e.endContainer, e.endOffset)
+      }
+    } catch (_) {}
+    if (!range) {
+      range = findTextRange(doc, anno.selectedText)
+    }
+    if (range) {
+      try {
+        const opts = (anno.type === 'annotation' || anno.type === 'note')
+          ? { withMarker: true } : {}
+        wrapRange(doc, range, anno, theme, opts)
+      } catch (_) {}
+    }
+  }
+}
+
+// 从 content 文档当前选中区域提取标注目标信息：
+// - 文本 / 起止 CFI / 选区结束点（视口坐标）/ 章节定位信息
+// - liveRange 用于提交时立即把包络写到当前章节（不依赖 DB 回灌也能立即可见）
+function captureSelectionFromContents(contents, rendition, book) {
+  if (!contents || !contents.window) return null
+  const win = contents.window
+  const doc = contents.document
+  const sel = win.getSelection && win.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const range = sel.getRangeAt(0)
+  if (range.collapsed) return null
+  const text = sel.toString()
+  if (!text || !text.trim()) return null
+  let cfiStart = ''
+  let cfiEnd = ''
+  try {
+    const endRange = doc.createRange()
+    endRange.setStart(range.endContainer, range.endOffset)
+    endRange.setEnd(range.endContainer, range.endOffset)
+    cfiStart = contents.cfiFromRange(range) || ''
+    cfiEnd = contents.cfiFromRange(endRange) || ''
+  } catch (_) {
+    return null
+  }
+  if (!cfiStart || !cfiEnd) return null
+  // 选区结束点（最后一个 rect 的右下角），叠加上 iframe 在主窗口的偏移
+  const rects = range.getClientRects()
+  const lastRect = rects[rects.length - 1] || range.getBoundingClientRect()
+  const iframeEl = win.frameElement
+  let offsetX = 0
+  let offsetY = 0
+  if (iframeEl) {
+    const ir = iframeEl.getBoundingClientRect()
+    offsetX = ir.left
+    offsetY = ir.top
+  }
+  // 章节信息：以 rendition 当前 location 的 href 为准（多数情况下选区与当前章节一致）
+  let chapterTitle = ''
+  let chapterHref = ''
+  try {
+    const loc = rendition?.currentLocation?.()
+    const href = loc?.start?.href || ''
+    const ch = findChapterByHref(href, book)
+    chapterTitle = ch.title
+    chapterHref = ch.href
+  } catch (_) {}
+  return {
+    text,
+    cfiStart,
+    cfiEnd,
+    spineIndex: typeof contents.sectionIndex === 'number' ? contents.sectionIndex : -1,
+    chapterTitle,
+    chapterHref,
+    x: offsetX + lastRect.right,
+    y: offsetY + lastRect.bottom + 6,
+    // 克隆 range，提交标的时把包络落到当前 DOM 上（liveRange 用一次即失效）
+    liveRange: range.cloneRange()
+  }
+}
+
 export default function Reader({
   filePath,
   mode,
@@ -184,6 +315,9 @@ export default function Reader({
   fontSize = FONT_SIZE_DEFAULT,
   theme = 'light',
   initialCfi = '',
+  annotations = [],
+  onCreateAnnotation,
+  onDeleteAnnotation,
   onReady,
   onRelocated,
   onLoadingChange,
@@ -208,6 +342,19 @@ export default function Reader({
   // ESC 退出沉浸模式的回调（iframe 内按键经 content hook 转发到这里）
   const onEscapeRef = useRef(onEscape)
   onEscapeRef.current = onEscape
+  // 标注删除回调（iframe 内 hover 删除按钮点击 → 跨 iframe 事件 → 这里）
+  const onDeleteAnnotationRef = useRef(onDeleteAnnotation)
+  onDeleteAnnotationRef.current = onDeleteAnnotation
+  // 标注：当前最新标注列表镜像（避免 content hook 闭包陈旧）；
+  // pickState 描述当前浮现的标注工具条（null=隐藏）
+  const annotationsRef = useRef(annotations)
+  annotationsRef.current = annotations
+  const [pickState, setPickState] = useState(null)
+  // pickState 镜像：内容 hook 内的选择回调读取最新值（不依赖闭包重渲）
+  const pickStateRef = useRef(null)
+  pickStateRef.current = pickState
+  // 当前 rendition 引用：popover 提交标的时立即包络正文（不依赖 DB 回灌）
+  const renditionForAnnoRef = useRef(null)
   const [bookReady, setBookReady] = useState(false)
   const [loading, setLoading] = useState(false)
   // 右下角进度小字的数据：{ current, total, percentage }；
@@ -433,6 +580,124 @@ export default function Reader({
           })
         } catch (_) {}
       })
+
+      // 标注 marker 点击：marker 在 iframe 内 dispatch 一个 CustomEvent，
+      // 这里把它翻译成主窗口坐标 + 在 pickState 里开一个 'viewAnno' 阶段。
+      rendition.hooks.content.register((contents) => {
+        try {
+          const win = contents && contents.window
+          if (!win) return
+          win.addEventListener('bookloft:anno-click', (e) => {
+            const detail = e && e.detail
+            if (!detail || !detail.id) return
+            const id = String(detail.id)
+            const anno = annotationsRef.current.find((a) => String(a.id) === id)
+            if (!anno) return
+            // iframe 内坐标 → 主窗口坐标
+            const iframeEl = win.frameElement
+            let offX = 0
+            let offY = 0
+            if (iframeEl) {
+              const ir = iframeEl.getBoundingClientRect()
+              offX = ir.left
+              offY = ir.top
+            }
+            const x = offX + (detail.x || 0) + 12
+            const y = offY + (detail.y || 0) + 14
+            // 同一个 marker 再点一次 → 关闭
+            const cur = pickStateRef.current
+            if (cur && cur.stage === 'viewAnno' && String(cur.anno?.id) === id) {
+              setPickState(null)
+              return
+            }
+            setPickState({ stage: 'viewAnno', anno, x, y })
+          })
+        } catch (_) {}
+      })
+
+      // 标注 hover 删除按钮：在每个章节文档上挂一个共享的红色叉叉按钮，
+      // 鼠标进入 span[data-bookloft-anno-id] 时显示在文字左上角外侧，点击 →
+      // 通过 CustomEvent 转发到主窗口（避免 iframe 内确认 dialog / IPC）。
+      rendition.hooks.content.register((contents) => {
+        try {
+          const doc = contents && contents.document
+          if (!doc) return
+          const detach = attachAnnoHoverDelete(doc, (detail) => {
+            const win = doc.defaultView
+            if (!win) return
+            try {
+              win.dispatchEvent(
+                new CustomEvent('bookloft:anno-delete-click', {
+                  detail: { id: String(detail.id || '') },
+                  bubbles: false
+                })
+              )
+            } catch (_) {}
+          })
+          // 章节销毁时清理（destroy 不会逐 contents 回调，所以挂到 contents 上兜底）
+          contents.__bookloftAnnoDeleteDetach = detach
+        } catch (_) {}
+      })
+
+      // 标注删除事件：把 iframe 内发来的删除请求转交给主窗口的回调
+      // （App.jsx 负责弹确认 dialog + 调 IPC + 更新 state）。
+      rendition.hooks.content.register((contents) => {
+        try {
+          const win = contents && contents.window
+          if (!win) return
+          win.addEventListener('bookloft:anno-delete-click', (e) => {
+            const detail = e && e.detail
+            if (!detail || !detail.id) return
+            const id = String(detail.id)
+            const anno = annotationsRef.current.find((a) => String(a.id) === id)
+            const type = anno ? anno.type : ''
+            onDeleteAnnotationRef.current?.({ id, type })
+          })
+        } catch (_) {}
+      })
+
+      // 标注应用：每章节渲染完成后，把当前书对应章节的标注全部包络到正文。
+      // - 已存在的标注由后端恢复或前端保存后注入
+      // - 优先用 CFI 反查 Range，失败则用 selectedText 在文档里做文本兜底匹配
+      // - 包络后给 span 加 data-bookloft-anno-id，便于按 id 清除
+      rendition.hooks.content.register((contents) => {
+        try {
+          applyAnnotationsToSection(contents, annotationsRef.current, themeRef.current)
+        } catch (_) {}
+      })
+
+      // 文本选中捕获：在每个章节文档上挂 mouseup，捕获有效选区后
+      // 把 pickState 切换为 stage='choose'（再次选区也会刷新位置/章节）。
+      // 选区在 iframe 内，位置需叠加 iframe 主窗口偏移；cross-iframe 选区
+      // 由浏览器自然约束在单 iframe 内，避免拼接复杂性。
+      rendition.hooks.content.register((contents) => {
+        try {
+          const doc = contents && contents.document
+          if (!doc) return
+          // 用 mouseup 而非 click：选区在 mouseup 时才最终稳定
+          doc.addEventListener('mouseup', () => {
+            // 给浏览器一点时间把选区写到 selection（避免极端时序问题）
+            setTimeout(() => {
+              try {
+                const capture = captureSelectionFromContents(
+                  contents,
+                  renditionRef.current,
+                  book
+                )
+                if (!capture) {
+                  // 选区为空（点击空白处）：收起浮层
+                  if (pickStateRef.current) setPickState(null)
+                  return
+                }
+                setPickState({ stage: 'choose', ...capture })
+              } catch (_) {}
+            }, 0)
+          })
+        } catch (_) {}
+      })
+
+      // 暴露 rendition 引用供 popover 提交时使用（不靠闭包，时效更稳定）
+      renditionForAnnoRef.current = rendition
 
       // 正文颜色/背景随主题（body inline + !important，压过书内默认样式）；
       // cjk 主题规则不再含颜色，全部由 override 管理（可更新、可切章补注）
@@ -665,6 +930,159 @@ export default function Reader({
     })
   }, [theme, bookReady])
 
+  // 主题切换时：刷新已渲染章节里的全部标注包络样式（色值随主题变化）。
+  // 做法：先清掉所有包络 span，再按当前主题重新包络。等价于"重新渲染标注"。
+  useEffect(() => {
+    if (!bookReady) return
+    const rendition = renditionRef.current
+    if (!rendition) return
+    const contents = rendition.getContents ? rendition.getContents() : []
+    contents.forEach((c) => {
+      if (!c || !c.document) return
+      try { clearAllAnnoSpans(c.document) } catch (_) {}
+      try {
+        applyAnnotationsToSection(c, annotationsRef.current, theme)
+      } catch (_) {}
+    })
+  }, [theme, annotations, bookReady])
+
+  // 删除标注：增量同步 DOM（只清理消失的 id，不全清全包，避免其他标注闪烁）。
+  // 主题切换的全清全包走上方 effect；这里的 effect 只负责"被删的 id"。
+  // 首次挂载或 bookReady 变化时把 prev 复位，不做清理（annotations 已通过 theme effect 应用）。
+  const prevAnnoIdsRef = useRef(null)
+  useEffect(() => {
+    if (!bookReady) {
+      prevAnnoIdsRef.current = null
+      return
+    }
+    const currentIds = new Set(
+      (annotations || []).map((a) => (a && a.id != null ? String(a.id) : null)).filter(Boolean)
+    )
+    const prev = prevAnnoIdsRef.current
+    if (prev) {
+      const removed = []
+      for (const id of prev) {
+        if (!currentIds.has(id)) removed.push(id)
+      }
+      if (removed.length > 0) {
+        const rendition = renditionRef.current
+        const contents = rendition?.getContents ? rendition.getContents() : []
+        contents.forEach((c) => {
+          if (!c || !c.document) return
+          removed.forEach((id) => {
+            try { clearAnnoSpansById(c.document, id) } catch (_) {}
+          })
+        })
+      }
+    }
+    prevAnnoIdsRef.current = currentIds
+  }, [annotations, bookReady])
+
+  // 全局交互：点击 popover 外部或按 ESC，收起标注浮层
+  // 注意：React 17+ 的合成 stopPropagation 不会阻止原生事件继续冒泡，
+  // 不能依赖 popover 自身的 stopPropagation。这里用 closest('.bookloft-popover')
+  // 直接检查点击目标是否落在 popover 内，简单可靠。
+  useEffect(() => {
+    if (!pickState) return
+    // 判断点击目标是否为输入控件（textarea/input/select/contenteditable 等）。
+    // 输入框是标注/笔记编辑的核心，点击它们时绝不能收起浮层——
+    // 否则会出现"点进去输入框就消失、光标进不去"的问题。
+    function isEditable(target) {
+      if (!target) return false
+      const tag = target.tagName ? target.tagName.toLowerCase() : ''
+      if (tag === 'textarea' || tag === 'input' || tag === 'select') return true
+      // contenteditable 元素（有的笔记编辑器将来会用）
+      if (target.isContentEditable) return true
+      // 落在 .bookloft-pop-textarea 内也算输入区（兜底，防止 textarea 内层节点漏判）
+      if (target.closest && target.closest('.bookloft-pop-textarea')) return true
+      return false
+    }
+    function onMouseDown(e) {
+      const target = e.target
+      if (target && target.closest && target.closest('.bookloft-popover')) return
+      if (isEditable(target)) return
+      setPickState(null)
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') setPickState(null)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [pickState])
+
+  // popover 操作：阶段切换 / 提交标的 / 取消
+  const setStage = (stage) => setPickState((s) => (s ? { ...s, stage } : s))
+  const closePopover = () => setPickState(null)
+
+  const submitAnno = async (payload) => {
+    const cur = pickStateRef.current
+    if (!cur) return
+    const wantsMarker = payload.type === 'annotation' || payload.type === 'note'
+    // 立即把包络写到当前正文（不等 DB 回灌）
+    try {
+      const rendition = renditionForAnnoRef.current
+      const contents = rendition?.getContents ? rendition.getContents() : []
+      const target = contents.find((c) => c && c.sectionIndex === cur.spineIndex)
+      if (target && target.document) {
+        // 用临时 id 写入 span（DB 回灌后用真实 id 重写 dataset，避免 DOM 重排）
+        const tempAnno = { id: 'tmp-' + Date.now(), ...payload }
+        wrapRange(
+          target.document,
+          cur.liveRange,
+          tempAnno,
+          themeRef.current,
+          { withMarker: wantsMarker }
+        )
+      }
+    } catch (_) {}
+    closePopover()
+    if (typeof onCreateAnnotation === 'function') {
+      const result = await onCreateAnnotation({
+        bookPath: filePath,
+        type: payload.type,
+        cfiStart: cur.cfiStart,
+        cfiEnd: cur.cfiEnd,
+        spineIndex: cur.spineIndex,
+        selectedText: cur.text,
+        chapterTitle: cur.chapterTitle,
+        chapterHref: cur.chapterHref,
+        style: payload.style || null,
+        color: payload.color || null,
+        content: payload.content || null
+      })
+      // 提交成功后用真实 id 重写临时 span + marker 的 dataset，避免重排导致闪烁
+      if (result && result.id) {
+        try {
+          const rendition = renditionForAnnoRef.current
+          const contents = rendition?.getContents ? rendition.getContents() : []
+          const target = contents.find((c) => c && c.sectionIndex === cur.spineIndex)
+          if (target && target.document) {
+            const realId = String(result.id)
+            const tmpSpans = target.document.querySelectorAll(
+              'span[data-bookloft-anno-id^="tmp-"]'
+            )
+            tmpSpans.forEach((sp) => {
+              sp.dataset.bookloftAnnoId = realId
+              const next = sp.nextSibling
+              if (
+                next &&
+                next.classList &&
+                next.classList.contains('bookloft-anno-marker') &&
+                String(next.dataset.bookloftAnnoMarker || '').startsWith('tmp-')
+              ) {
+                next.dataset.bookloftAnnoMarker = realId
+              }
+            })
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
   return (
     <div className="reader">
       <div ref={containerRef} className="reader-area" />
@@ -676,6 +1094,82 @@ export default function Reader({
             : ''}
           {progress.percentage != null ? `${progress.percentage}%` : ''}
         </div>
+      )}
+
+      {/* 标注浮层：根据 pickState.stage 渲染不同 popover */}
+      {pickState && pickState.stage === 'choose' && (
+        <SelectionBar
+          x={pickState.x}
+          y={pickState.y}
+          onPick={(type) => setStage(type)}
+        />
+      )}
+      {pickState && pickState.stage === 'highlight' && (
+        <HighlightPicker
+          x={pickState.x}
+          y={pickState.y + 44}
+          theme={theme}
+          onPick={(c) =>
+            submitAnno({
+              type: 'highlight',
+              style: c.key,
+              color: c.bg
+            })
+          }
+          onCancel={closePopover}
+        />
+      )}
+      {pickState && pickState.stage === 'underline' && (
+        <UnderlinePicker
+          x={pickState.x}
+          y={pickState.y + 44}
+          theme={theme}
+          onPick={(style) =>
+            submitAnno({
+              type: 'underline',
+              style,
+              color: style === 'dashed' ? getAnnotationPalette(theme).underlineDashed : getAnnotationPalette(theme).underlineSolid
+            })
+          }
+          onCancel={closePopover}
+        />
+      )}
+      {pickState && pickState.stage === 'annotation' && (
+        <AnnotationEditor
+          x={Math.min(window.innerWidth - 320, pickState.x)}
+          y={pickState.y + 44}
+          onSave={(text) => submitAnno({ type: 'annotation', content: text })}
+          onCancel={closePopover}
+        />
+      )}
+      {pickState && pickState.stage === 'note' && (
+        <NoteEditor
+          x={Math.min(window.innerWidth - 380, pickState.x)}
+          y={pickState.y + 44}
+          onSave={(md) => submitAnno({ type: 'note', content: md })}
+          onCancel={closePopover}
+        />
+      )}
+      {/* 点击正文里 marker → 展示已写入的标注 / 笔记内容 */}
+      {pickState && pickState.stage === 'viewAnno' && (
+        <AnnoViewer
+          x={Math.min(window.innerWidth - 380, pickState.x)}
+          y={Math.min(window.innerHeight - 280, pickState.y)}
+          anno={pickState.anno}
+          theme={theme}
+          onClose={closePopover}
+          onDelete={typeof onDeleteAnnotationRef.current === 'function' ? async () => {
+            const a = pickStateRef.current?.anno
+            if (!a) return
+            // 等待 handleDeleteAnnotation 异步处理（confirm + IPC + setAnnotations），
+            // 返回 true 表示真删，false 表示用户在 confirm 里取消了（或失败）。
+            // 只有真删成功才同步关闭弹框——避免用户取消后弹框莫名消失。
+            const ok = await onDeleteAnnotationRef.current({ id: a.id, type: a.type })
+            if (ok !== false && pickStateRef.current?.stage === 'viewAnno') {
+              setPickState(null)
+            }
+          } : undefined}
+        />
       )}
     </div>
   )

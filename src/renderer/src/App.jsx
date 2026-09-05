@@ -152,6 +152,8 @@ export default function App() {
   const [booted, setBooted] = useState(false)
   // 启动时从阅读记录恢复的阅读位置（最新一条记录的 CFI），仅对新打开的这本人参生效
   const [initialCfi, setInitialCfi] = useState('')
+  // 标注（高亮/划线/标注/笔记）：随 filePath 变化从 DB 加载
+  const [annotations, setAnnotations] = useState([])
 
   // 保存 rendition 引用以便工具栏翻页 / 目录跳转
   const renditionRef = useRef(null)
@@ -220,6 +222,76 @@ export default function App() {
     boot()
     return () => {
       cancelled = true
+    }
+  }, [])
+
+  // 打开新书时拉取该书全部标注（失败静默降级为空数组）
+  useEffect(() => {
+    if (!booted || !filePath) {
+      setAnnotations([])
+      return
+    }
+    let cancelled = false
+    const api = window.bookloftAPI
+    if (typeof api?.listAnnotations !== 'function') return
+    api
+      .listAnnotations(filePath)
+      .then((list) => {
+        if (!cancelled) setAnnotations(Array.isArray(list) ? list : [])
+      })
+      .catch((err) => console.warn('[App] 加载标注失败:', err))
+    return () => {
+      cancelled = true
+    }
+  }, [filePath, booted])
+
+  // 新增标注：调主进程写入，并把返回的完整记录合并进本地 state
+  const handleCreateAnnotation = useCallback(
+    async (payload) => {
+      const api = window.bookloftAPI
+      if (typeof api?.createAnnotation !== 'function') return null
+      try {
+        const anno = await api.createAnnotation(payload)
+        if (anno) setAnnotations((prev) => [...prev, anno])
+        return anno
+      } catch (err) {
+        console.error('[App] 创建标注失败:', err)
+        return null
+      }
+    },
+    []
+  )
+
+  // 删除标注：先弹原生确认，避免误触；通过后再调 IPC + 更新本地 state。
+  // 弹窗放在主窗口（不放在 iframe 内），免得 iframe 内 window.confirm 被某些书内脚本
+  // 拦截或视觉割裂；浏览器原生 confirm 与 App 整体保持极简风格一致。
+  // 任何类型（高亮 / 划线 / 标注 / 笔记）的标注都可被删除——确认提示统一文案。
+  // 返回值：true=真删，false=confirm 取消 / 删除失败——Reader 据此决定是否同步关闭弹框。
+  const handleDeleteAnnotation = useCallback(async ({ id, type }) => {
+    if (id == null) return false
+    const api = window.bookloftAPI
+    if (typeof api?.deleteAnnotation !== 'function') return false
+    // 原生确认：阻塞直到用户点确认 / 取消
+    const typeLabel =
+      type === 'note'
+        ? '笔记'
+        : type === 'annotation'
+        ? '批注'
+        : type === 'underline'
+        ? '划线'
+        : type === 'highlight'
+        ? '高亮'
+        : '标注'
+    const ok = window.confirm(`确认删除该${typeLabel}？此操作不可撤销。`)
+    if (!ok) return false
+    try {
+      await api.deleteAnnotation(id)
+      setAnnotations((prev) => prev.filter((a) => String(a.id) !== String(id)))
+      return true
+    } catch (err) {
+      console.error('[App] 删除标注失败:', err)
+      alert('删除失败：' + (err?.message || String(err)))
+      return false
     }
   }, [])
 
@@ -671,6 +743,9 @@ export default function App() {
             fontSize={fontSize}
             theme={theme}
             initialCfi={initialCfi}
+            annotations={annotations}
+            onCreateAnnotation={handleCreateAnnotation}
+            onDeleteAnnotation={handleDeleteAnnotation}
             onReady={handleReady}
             onRelocated={handleRelocated}
             onLoadingChange={setLoading}

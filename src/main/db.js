@@ -37,6 +37,36 @@ export function initDb() {
       updated_at INTEGER NOT NULL
     )
   `)
+  // 标注：用户对正文的标记（高亮/划线/标注/笔记）
+  // - cfi_start / cfi_end：content 文档内的 partial CFI，epub.js 可还原为 DOM Range
+  // - spine_index：标注所在章节（contents.sectionIndex），用于快速定位恢复
+  // - selected_text：冗余存储选中的原文，便于文字回退匹配与笔记渲染
+  // - chapter_title / chapter_href：所属章节（用于笔记按章节组织的二级标题）
+  // - type：'highlight' | 'underline' | 'annotation' | 'note'
+  // - style：'solid'|'dashed'（划线）或 5 种高亮颜色 key（'c1'..'c5'）
+  // - color：实际色值（按当前主题生成；随书保存，确保换主题后历史标注颜色稳定）
+  // - content：标注纯文本 / 笔记 markdown 正文（其余类型为空）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS annotations (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_path     TEXT NOT NULL,
+      type          TEXT NOT NULL,
+      cfi_start     TEXT NOT NULL,
+      cfi_end       TEXT NOT NULL,
+      spine_index   INTEGER NOT NULL,
+      selected_text TEXT NOT NULL,
+      chapter_title TEXT,
+      chapter_href  TEXT,
+      style         TEXT,
+      color         TEXT,
+      content       TEXT,
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    )
+  `)
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_annotations_book ON annotations(book_path, id)'
+  )
   return db
 }
 
@@ -126,4 +156,98 @@ export function closeDb() {
     } catch {}
     db = null
   }
+}
+
+// ---------- 标注（annotations） ----------
+// 列出某本书的全部标注（按 id 升序）。渲染层用于章节恢复与笔记导出。
+export function listAnnotations(bookPath) {
+  if (!db || !bookPath) return []
+  return db
+    .prepare(
+      `SELECT id, book_path AS bookPath, type, cfi_start AS cfiStart, cfi_end AS cfiEnd,
+              spine_index AS spineIndex, selected_text AS selectedText,
+              chapter_title AS chapterTitle, chapter_href AS chapterHref,
+              style, color, content,
+              created_at AS createdAt, updated_at AS updatedAt
+         FROM annotations
+        WHERE book_path = ?
+        ORDER BY id ASC`
+    )
+    .all(String(bookPath))
+}
+
+// 写入一条标注并返回完整记录（含新 id / 时间戳）
+export function createAnnotation(data) {
+  if (!db || !data) return null
+  const now = Date.now()
+  const info = db
+    .prepare(
+      `INSERT INTO annotations
+        (book_path, type, cfi_start, cfi_end, spine_index, selected_text,
+         chapter_title, chapter_href, style, color, content, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      String(data.bookPath || ''),
+      String(data.type || ''),
+      String(data.cfiStart || ''),
+      String(data.cfiEnd || ''),
+      Number.isFinite(data.spineIndex) ? data.spineIndex : -1,
+      String(data.selectedText || ''),
+      data.chapterTitle ? String(data.chapterTitle) : null,
+      data.chapterHref ? String(data.chapterHref) : null,
+      data.style ? String(data.style) : null,
+      data.color ? String(data.color) : null,
+      data.content ? String(data.content) : null,
+      now,
+      now
+    )
+  return getAnnotationById(info.lastInsertRowid)
+}
+
+export function getAnnotationById(id) {
+  if (!db || !id) return null
+  return (
+    db
+      .prepare(
+        `SELECT id, book_path AS bookPath, type, cfi_start AS cfiStart, cfi_end AS cfiEnd,
+                spine_index AS spineIndex, selected_text AS selectedText,
+                chapter_title AS chapterTitle, chapter_href AS chapterHref,
+                style, color, content,
+                created_at AS createdAt, updated_at AS updatedAt
+           FROM annotations WHERE id = ?`
+      )
+      .get(id) || null
+  )
+}
+
+// 更新标注（目前仅允许改 content / color / style）
+export function updateAnnotation(id, patch) {
+  if (!db || !id || !patch) return false
+  const fields = []
+  const values = []
+  if ('content' in patch) {
+    fields.push('content = ?')
+    values.push(patch.content ? String(patch.content) : null)
+  }
+  if ('color' in patch) {
+    fields.push('color = ?')
+    values.push(patch.color ? String(patch.color) : null)
+  }
+  if ('style' in patch) {
+    fields.push('style = ?')
+    values.push(patch.style ? String(patch.style) : null)
+  }
+  if (!fields.length) return false
+  fields.push('updated_at = ?')
+  values.push(Date.now())
+  values.push(id)
+  db.prepare(`UPDATE annotations SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+  return true
+}
+
+export function deleteAnnotation(id) {
+  if (!db || !id) return false
+  db.prepare('DELETE FROM annotations WHERE id = ?').run(id)
+  return true
 }

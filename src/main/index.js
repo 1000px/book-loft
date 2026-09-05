@@ -5,7 +5,19 @@ import { execFile } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fixEpubToc } from './tocFix.js'
-import { initDb, getAllSettings, setSetting, closeDb, upsertHistory, getLatestHistory, getHistoryList } from './db.js'
+import {
+  initDb,
+  getAllSettings,
+  setSetting,
+  closeDb,
+  upsertHistory,
+  getLatestHistory,
+  getHistoryList,
+  listAnnotations,
+  createAnnotation,
+  updateAnnotation,
+  deleteAnnotation
+} from './db.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -103,6 +115,43 @@ ipcMain.handle('history:list', () => {
   } catch (err) {
     console.error('[db] history list failed:', err)
     return []
+  }
+})
+
+// IPC: 标注 CRUD（高亮 / 划线 / 标注 / 笔记）
+ipcMain.handle('annotations:list', (_event, bookPath) => {
+  try {
+    return listAnnotations(bookPath)
+  } catch (err) {
+    console.error('[db] annotations list failed:', err)
+    return []
+  }
+})
+
+ipcMain.handle('annotations:create', (_event, data) => {
+  try {
+    return createAnnotation(data)
+  } catch (err) {
+    console.error('[db] annotation create failed:', err)
+    return null
+  }
+})
+
+ipcMain.handle('annotations:update', (_event, id, patch) => {
+  try {
+    return updateAnnotation(id, patch)
+  } catch (err) {
+    console.error('[db] annotation update failed:', err)
+    return false
+  }
+})
+
+ipcMain.handle('annotations:delete', (_event, id) => {
+  try {
+    return deleteAnnotation(id)
+  } catch (err) {
+    console.error('[db] annotation delete failed:', err)
+    return false
   }
 })
 

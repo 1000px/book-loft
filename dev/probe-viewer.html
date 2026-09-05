@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>AnnoViewer 视觉对比</title>
+  <link rel="stylesheet" href="../out/renderer/assets/index-2OcbtIoS.css" />
+  <style>
+    html, body { margin: 0; padding: 0; }
+    body { padding: 32px; background: #e9ecf2; font-family: system-ui, sans-serif; }
+    h2 { font-size: 14px; color: #5b6472; margin: 0 0 14px; font-weight: 600; letter-spacing: 0.04em; }
+    h2:not(:first-child) { margin-top: 36px; }
+    .row { display: flex; gap: 22px; flex-wrap: wrap; }
+    .theme-block {
+      width: 360px;
+      padding: 20px 16px 24px;
+      border-radius: 12px;
+      box-sizing: border-box;
+    }
+    .stage {
+      position: relative;
+      padding-top: 30px;
+    }
+    .stage-label {
+      position: absolute;
+      top: 4px;
+      left: 2px;
+      font-size: 11px;
+      color: var(--text-3);
+      letter-spacing: 0.08em;
+    }
+    /* 模拟 marker 圆点（静态，放卡片上方）*/
+    .marker-preview {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+    }
+    .marker-preview.note  { background: var(--anno-note); }
+    .marker-preview.anno  { background: var(--anno-ann); }
+    /* 让 fixed 卡片在探针里按流内展示，避免全部叠到视口 (46,80) */
+    .bookloft-anno-viewer--rich {
+      position: static !important;
+      width: 100% !important;
+      max-width: none !important;
+      box-shadow: var(--shadow-2) !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Light -->
+  <h2>Light · 默认浅色（冷灰蓝）</h2>
+  <div class="row">
+    <div class="theme-block" style="--bg-app:#f2f4f8;--bg-content:#ffffff;--bg-panel:#ffffff;--bg-hover:#f0f3f8;--border:#e4e7ee;--border-strong:#d0d6e0;--text-1:#2b3242;--text-2:#5b6472;--text-3:#98a0ad;--scrollbar-thumb:#cfd5df;--danger-bg:#fdecec;--danger-border:#f5c2c2;--danger-text:#c23a3a;--shadow-2:0 10px 30px rgba(23,32,58,0.12);--anno-note:#1976d2;--anno-ann:#d97706;">
+      <div class="stage">
+        <span class="stage-label">笔记 note</span>
+        <div class="marker-preview note">N</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="note" style="--anno-color:#1976d2;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#1976d21a;color:#1976d2;border-color:#1976d233;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M12 2v4"/><path d="M16 2v4"/><rect width="16" height="18" x="4" y="4" rx="2"/><path d="M8 10h6"/><path d="M8 14h8"/><path d="M8 18h5"/></svg><span>笔记</span></span>
+            <span class="bookloft-viewer-chapter">第三章 欧洲中心的形成</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>勃兰登堡-普鲁士国家起源于十二世纪的北德平原边陲。</p></blockquote>
+          <section class="bookloft-viewer-content"><pre>勃兰登堡本身是没有"建国神话"的地方，要到霍亨索伦家族到来后才开始有"领土意识"。
+
+— 这个角落的叙事要后续展开。</pre></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+    <div class="theme-block" style="--bg-app:#f2f4f8;--bg-content:#ffffff;--bg-panel:#ffffff;--bg-hover:#f0f3f8;--border:#e4e7ee;--border-strong:#d0d6e0;--text-1:#2b3242;--text-2:#5b6472;--text-3:#98a0ad;--scrollbar-thumb:#cfd5df;--danger-bg:#fdecec;--danger-border:#f5c2c2;--danger-text:#c23a3a;--shadow-2:0 10px 30px rgba(23,32,58,0.12);--anno-note:#1976d2;--anno-ann:#d97706;">
+      <div class="stage">
+        <span class="stage-label">批注 annotation</span>
+        <div class="marker-preview anno">A</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="annotation" style="--anno-color:#d97706;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#d977061a;color:#d97706;border-color:#d9770633;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>批注</span></span>
+            <span class="bookloft-viewer-chapter">第一章 边陲之地</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>普鲁士精神的源头在条顿骑士团的国家建设里，这是后话。</p></blockquote>
+          <section class="bookloft-viewer-content"><p>条顿骑士团在 1226 年获得金玺诏书后，对普鲁士地区发动了长达半个世纪的征伐。</p></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dark -->
+  <h2>Dark · 夜间阅读</h2>
+  <div class="row">
+    <div class="theme-block" style="background:#1d2026;--bg-app:#14161a;--bg-content:#1d2026;--bg-panel:#1d2026;--bg-hover:#272b33;--border:#2e333c;--border-strong:#3b414c;--text-1:#dcdfe5;--text-2:#a3aab5;--text-3:#626a76;--scrollbar-thumb:#333943;--danger-bg:#3a2626;--danger-border:#5c3535;--danger-text:#e08a8a;--shadow-2:0 10px 30px rgba(0,0,0,0.55);--anno-note:#60a5fa;--anno-ann:#fbbf24;">
+      <div class="stage">
+        <span class="stage-label">笔记 note</span>
+        <div class="marker-preview note">N</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="note" style="--anno-color:#60a5fa;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#60a5fa26;color:#60a5fa;border-color:#60a5fa40;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M12 2v4"/><path d="M16 2v4"/><rect width="16" height="18" x="4" y="4" rx="2"/><path d="M8 10h6"/><path d="M8 14h8"/><path d="M8 18h5"/></svg><span>笔记</span></span>
+            <span class="bookloft-viewer-chapter">第三章 欧洲中心的形成</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>勃兰登堡-普鲁士国家起源于十二世纪的北德平原边陲。</p></blockquote>
+          <section class="bookloft-viewer-content"><pre>勃兰登堡本身是没有"建国神话"的地方，要到霍亨索伦家族到来后才开始有"领土意识"。</pre></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+    <div class="theme-block" style="background:#1d2026;--bg-app:#14161a;--bg-content:#1d2026;--bg-panel:#1d2026;--bg-hover:#272b33;--border:#2e333c;--border-strong:#3b414c;--text-1:#dcdfe5;--text-2:#a3aab5;--text-3:#626a76;--scrollbar-thumb:#333943;--danger-bg:#3a2626;--danger-border:#5c3535;--danger-text:#e08a8a;--shadow-2:0 10px 30px rgba(0,0,0,0.55);--anno-note:#60a5fa;--anno-ann:#fbbf24;">
+      <div class="stage">
+        <span class="stage-label">批注 annotation</span>
+        <div class="marker-preview anno">A</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="annotation" style="--anno-color:#fbbf24;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#fbbf2426;color:#fbbf24;border-color:#fbbf2440;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>批注</span></span>
+            <span class="bookloft-viewer-chapter">第一章 边陲之地</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>普鲁士精神的源头在条顿骑士团的国家建设里，这是后话。</p></blockquote>
+          <section class="bookloft-viewer-content"><p>条顿骑士团在 1226 年获得金玺诏书后，对普鲁士地区发动了长达半个世纪的征伐。</p></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ink -->
+  <h2>Ink · 水墨纸面</h2>
+  <div class="row">
+    <div class="theme-block" style="background:#e6e0d2;--bg-app:#e6e0d2;--bg-content:#f7f3e8;--bg-panel:#f2eee2;--bg-hover:#ebe5d6;--border:#ddd6c4;--border-strong:#c9c0a9;--text-1:#2f2a24;--text-2:#564d42;--text-3:#8c8271;--scrollbar-thumb:#cdc4ae;--danger-bg:#f6e7df;--danger-border:#e0c0ad;--danger-text:#9c4f34;--shadow-2:0 10px 30px rgba(70,58,42,0.2);--anno-note:#1e40af;--anno-ann:#c2410c;">
+      <div class="stage">
+        <span class="stage-label">笔记 note</span>
+        <div class="marker-preview note">N</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="note" style="--anno-color:#1e40af;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#1e40af1a;color:#1e40af;border-color:#1e40af33;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M12 2v4"/><path d="M16 2v4"/><rect width="16" height="18" x="4" y="4" rx="2"/><path d="M8 10h6"/><path d="M8 14h8"/><path d="M8 18h5"/></svg><span>笔记</span></span>
+            <span class="bookloft-viewer-chapter">第三章 欧洲中心的形成</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>勃兰登堡-普鲁士国家起源于十二世纪的北德平原边陲。</p></blockquote>
+          <section class="bookloft-viewer-content"><pre>勃兰登堡本身是没有"建国神话"的地方，要到霍亨索伦家族到来后才开始有"领土意识"。</pre></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+    <div class="theme-block" style="background:#e6e0d2;--bg-app:#e6e0d2;--bg-content:#f7f3e8;--bg-panel:#f2eee2;--bg-hover:#ebe5d6;--border:#ddd6c4;--border-strong:#c9c0a9;--text-1:#2f2a24;--text-2:#564d42;--text-3:#8c8271;--scrollbar-thumb:#cdc4ae;--danger-bg:#f6e7df;--danger-border:#e0c0ad;--danger-text:#9c4f34;--shadow-2:0 10px 30px rgba(70,58,42,0.2);--anno-note:#1e40af;--anno-ann:#c2410c;">
+      <div class="stage">
+        <span class="stage-label">批注 annotation</span>
+        <div class="marker-preview anno">A</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="annotation" style="--anno-color:#c2410c;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#c2410c1a;color:#c2410c;border-color:#c2410c33;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>批注</span></span>
+            <span class="bookloft-viewer-chapter">第一章 边陲之地</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>普鲁士精神的源头在条顿骑士团的国家建设里，这是后话。</p></blockquote>
+          <section class="bookloft-viewer-content"><p>条顿骑士团在 1226 年获得金玺诏书后，对普鲁士地区发动了长达半个世纪的征伐。</p></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Green -->
+  <h2>Green · 护眼豆沙绿</h2>
+  <div class="row">
+    <div class="theme-block" style="background:#d5e8d7;--bg-app:#d5e8d7;--bg-content:#eaf6ec;--bg-panel:#e3f2e5;--bg-hover:#d3e9d5;--border:#bcdcc1;--border-strong:#a6cdac;--text-1:#1f3529;--text-2:#3d5c48;--text-3:#6f9280;--scrollbar-thumb:#b4d6ba;--danger-bg:#f7e9e5;--danger-border:#e0bdb4;--danger-text:#8f4032;--shadow-2:0 10px 30px rgba(31,61,43,0.18);--anno-note:#1d4ed8;--anno-ann:#a16207;">
+      <div class="stage">
+        <span class="stage-label">笔记 note</span>
+        <div class="marker-preview note">N</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="note" style="--anno-color:#1d4ed8;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#1d4ed81a;color:#1d4ed8;border-color:#1d4ed833;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M12 2v4"/><path d="M16 2v4"/><rect width="16" height="18" x="4" y="4" rx="2"/><path d="M8 10h6"/><path d="M8 14h8"/><path d="M8 18h5"/></svg><span>笔记</span></span>
+            <span class="bookloft-viewer-chapter">第三章 欧洲中心的形成</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>勃兰登堡-普鲁士国家起源于十二世纪的北德平原边陲。</p></blockquote>
+          <section class="bookloft-viewer-content"><pre>勃兰登堡本身是没有"建国神话"的地方，要到霍亨索伦家族到来后才开始有"领土意识"。</pre></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+    <div class="theme-block" style="background:#d5e8d7;--bg-app:#d5e8d7;--bg-content:#eaf6ec;--bg-panel:#e3f2e5;--bg-hover:#d3e9d5;--border:#bcdcc1;--border-strong:#a6cdac;--text-1:#1f3529;--text-2:#3d5c48;--text-3:#6f9280;--scrollbar-thumb:#b4d6ba;--danger-bg:#f7e9e5;--danger-border:#e0bdb4;--danger-text:#8f4032;--shadow-2:0 10px 30px rgba(31,61,43,0.18);--anno-note:#1d4ed8;--anno-ann:#a16207;">
+      <div class="stage">
+        <span class="stage-label">批注 annotation</span>
+        <div class="marker-preview anno">A</div>
+        <div class="bookloft-popover bookloft-anno-viewer bookloft-anno-viewer--rich" data-anno-type="annotation" style="--anno-color:#a16207;">
+          <header class="bookloft-viewer-header">
+            <span class="bookloft-viewer-chip" style="background:#a162071a;color:#a16207;border-color:#a1620733;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>批注</span></span>
+            <span class="bookloft-viewer-chapter">第一章 边陲之地</span>
+            <button type="button" class="bookloft-viewer-close" title="关闭" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </header>
+          <blockquote class="bookloft-viewer-quote"><span class="bookloft-viewer-quote-bar" aria-hidden="true"></span><p>普鲁士精神的源头在条顿骑士团的国家建设里，这是后话。</p></blockquote>
+          <section class="bookloft-viewer-content"><p>条顿骑士团在 1226 年获得金玺诏书后，对普鲁士地区发动了长达半个世纪的征伐。</p></section>
+          <footer class="bookloft-viewer-footer"><button type="button" class="bookloft-viewer-delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>删除</span></button></footer>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

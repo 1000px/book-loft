@@ -252,6 +252,411 @@ body {
   color: #ffffff;
 }
 
+/* ===== 标注浮层（主窗口内，position: fixed 跟随选区） ===== */
+.bookloft-popover {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-2);
+  user-select: none;
+  /* 主窗口在 iframe 之上的层级 */
+  animation: bookloft-pop-in 0.12s ease-out;
+}
+@keyframes bookloft-pop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bookloft-pop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.bookloft-pop-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.bookloft-pop-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.bookloft-pop-cancel {
+  width: 26px;
+  height: 26px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-3);
+}
+
+/* 高亮颜色色块：圆形大色块，悬浮时轻微放大 */
+.bookloft-color-swatches { gap: 8px; padding: 8px 10px; }
+.bookloft-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.bookloft-swatch:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 3px var(--accent);
+}
+
+/* 划线样式：按钮内自带下划线预览 */
+.bookloft-underline-options { gap: 4px; padding: 6px; }
+.bookloft-underline-demo {
+  width: auto;
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* 批注 / 笔记 编辑器 */
+.bookloft-annotation-editor,
+.bookloft-note-editor {
+  flex-direction: column;
+  align-items: stretch;
+  width: 300px;
+  padding: 10px;
+  gap: 8px;
+}
+.bookloft-note-editor { width: 360px; }
+
+.bookloft-pop-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+.bookloft-pop-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--text-1);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.bookloft-pop-textarea:focus { border-color: var(--accent); }
+
+.bookloft-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.bookloft-pop-link,
+.bookloft-pop-primary {
+  border: none;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.bookloft-pop-link {
+  background: transparent;
+  color: var(--text-2);
+}
+.bookloft-pop-link:hover { color: var(--text-1); }
+.bookloft-pop-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+.bookloft-pop-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.bookloft-pop-primary:hover:not(:disabled) { filter: brightness(1.08); }
+
+.bookloft-pop-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: right;
+}
+
+/* ===== 标注 / 笔记：浮动 marker（小图标，浮在选区最后一行末尾光标的正上方） ===== */
+/* 关键：marker 不再插入文本流（不占行内位置、不挤正文），
+   使用 position: fixed 相对 iframe 视口定位，挂在 doc.body 上。
+   inline style 直接给定 left/top（基于 lastRect 的 right 与 top），
+   这里只负责 box 模型 / hover / z-index 等样式。 */
+.bookloft-anno-marker {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 高层级：浮在正文之上，不被选区背景遮住 */
+  z-index: 999;
+  /* 整枚 wrapper 不接收，事件只让 button 收，避免遮挡正文选区 */
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag;
+  line-height: 1;
+}
+.bookloft-anno-marker .bookloft-anno-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 22×22 圆形按钮：装下 22×22 的 SVG（viewBox 24，stroke 视觉 ≈ 1.83px）。
+     如果按钮太小、SVG 又缩进 viewBox，stroke 会细到几乎看不见，
+     这是上一轮图标"消失"的真正根因。 */
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 0;
+  /* 默认 0.92、hover 1.0 + scale，让图标"飘"在文字上方又不过分抢眼 */
+  opacity: 0.92;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  /* 细微阴影 + 边框：与背景色拉开、避免与正文混在一起 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.bookloft-anno-marker .bookloft-anno-icon:hover {
+  opacity: 1;
+  transform: scale(1.15);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28);
+}
+.bookloft-anno-marker .bookloft-anno-icon:active {
+  transform: scale(0.95);
+}
+.bookloft-anno-marker .bookloft-anno-icon svg {
+  display: block;
+}
+
+/* ===== 标注 / 笔记 内容查看浮层（美化重设）===== */
+/* 设计原则：
+   - 与全局 popover 一致的圆角、阴影、入场动画
+   - 头部色块用 --anno-color（按类型 + 主题感知动态传入）
+   - 章节/正文分层，行高宽松，长文可滚动
+   - 引用块用左侧彩条而不是整块底色，避免与主题背景混淆
+   - 底部操作区保持低饱和，仅 hover 显形 */
+
+.bookloft-anno-viewer--rich {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 14px 12px;
+  gap: 10px;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  /* --anno-color 由组件 inline 传入 */
+  --anno-color: var(--accent);
+}
+
+/* 顶部小箭头：浮层右上方位置，圆角向下凸出一点，朝向 marker */
+.bookloft-viewer-arrow {
+  position: absolute;
+  top: -6px;
+  right: 18px;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  transform: rotate(45deg);
+  border-radius: 2px 0 0 0;
+}
+
+/* 头部：chip + 章节（省略号截断）+ 关闭按钮（靠右） */
+.bookloft-viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.bookloft-viewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  flex: 0 0 auto;
+  user-select: none;
+}
+.bookloft-viewer-chip svg {
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+.bookloft-viewer-chapter {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 关闭按钮：右上角，hover 才显形，匹配全局 ghost 风格 */
+.bookloft-viewer-close {
+  position: relative;
+  margin: -2px -2px 0 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+.bookloft-viewer-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+  opacity: 1;
+}
+.bookloft-viewer-close:active {
+  transform: scale(0.92);
+}
+.bookloft-viewer-close svg {
+  display: block;
+}
+
+/* 引用块（选区原文）：左侧带颜色竖条 + 极浅主题背景 */
+.bookloft-viewer-quote {
+  position: relative;
+  margin: 0;
+  padding: 8px 10px 8px 12px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+  max-height: 104px;
+  overflow: hidden;
+  word-break: break-word;
+  white-space: pre-wrap;
+  /* 淡内部阴影：仅在内容超出时提示"还有更多" */
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 84px, transparent 104px);
+          mask-image: linear-gradient(to bottom, #000 0, #000 84px, transparent 104px);
+}
+.bookloft-viewer-quote-bar {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--anno-color, var(--accent));
+  opacity: 0.85;
+}
+.bookloft-viewer-quote p {
+  margin: 0;
+  padding: 0 0 0 4px;
+}
+
+/* 正文区：用户写入的批注/笔记 */
+.bookloft-viewer-content {
+  font-size: 13.5px;
+  color: var(--text-1);
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+  max-height: 240px;
+  overflow: auto;
+  /* 自定义滚动条：与全局一致 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.bookloft-viewer-content::-webkit-scrollbar {
+  width: 6px;
+}
+.bookloft-viewer-content::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+.bookloft-viewer-content p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bookloft-viewer-content pre {
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--text-1);
+  background: transparent;
+}
+
+/* 底部：删除按钮（仅在传 onDelete 时渲染） */
+.bookloft-viewer-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+.bookloft-viewer-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.bookloft-viewer-delete svg {
+  display: block;
+}
+.bookloft-viewer-delete:hover {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+}
+.bookloft-viewer-delete:active {
+  transform: scale(0.96);
+}
+.bookloft-pop-danger {
+  color: #e5484d !important;
+}
+.bookloft-pop-danger:hover {
+  color: #c83a3e !important;
+}
+
 /* 图标按钮：幽灵风格，hover 才出现底色，保持顶栏清爽 */
 .icon-btn {
   display: inline-flex;

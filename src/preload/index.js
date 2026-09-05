@@ -38,5 +38,10 @@ contextBridge.exposeInMainWorld('bookloftAPI', {
   // 最新一条阅读记录（最近读的书 + 上次位置），无记录返回 null
   getLatestHistory: () => ipcRenderer.invoke('history:latest'),
   // 全部阅读记录列表（按最近阅读排序）
-  getHistoryList: () => ipcRenderer.invoke('history:list')
+  getHistoryList: () => ipcRenderer.invoke('history:list'),
+  // 标注 CRUD：list / create / update / delete（data 字段见 main/db.js）
+  listAnnotations: (bookPath) => ipcRenderer.invoke('annotations:list', bookPath),
+  createAnnotation: (data) => ipcRenderer.invoke('annotations:create', data),
+  updateAnnotation: (id, patch) => ipcRenderer.invoke('annotations:update', id, patch),
+  deleteAnnotation: (id) => ipcRenderer.invoke('annotations:delete', id)
 })
