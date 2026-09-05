@@ -15,6 +15,16 @@ contextBridge.exposeInMainWorld('bookloftAPI', {
   readEpubBuffer: (filePath) => ipcRenderer.invoke('file:readEpubBuffer', filePath),
   // Quit the whole application (settings menu -> 退出)
   quitApp: () => ipcRenderer.send('app:quit'),
+  // 自绘标题栏窗口控制：最小化 / 最大化(恢复，返回切换后状态) / 当前是否最大化
+  minimizeWindow: () => ipcRenderer.send('win:minimize'),
+  toggleMaximize: () => ipcRenderer.invoke('win:toggleMaximize'),
+  isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
+  // 最大化状态变化订阅（主进程广播），返回取消订阅函数
+  onMaximizedChanged: (cb) => {
+    const listener = (_event, value) => cb(value)
+    ipcRenderer.on('win:maximized-changed', listener)
+    return () => ipcRenderer.removeListener('win:maximized-changed', listener)
+  },
   // 切换窗口系统全屏（沉浸式阅读）：true 进入，false 退出
   setFullscreen: (flag) => ipcRenderer.send('app:setFullscreen', flag),
   // 界面全屏：仅把窗口铺满整个屏幕（界面结构不变），返回切换后是否全屏

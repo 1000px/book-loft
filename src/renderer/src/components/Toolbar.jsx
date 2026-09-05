@@ -1,8 +1,39 @@
 import { useCallback, useState } from 'react'
-import { PanelLeftClose, PanelLeftOpen, Settings, ChevronLeft, ChevronRight, Home } from 'lucide-react'
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
+  Home,
+  Minus,
+  Square,
+  Copy,
+  X
+} from 'lucide-react'
 import SettingsMenu from './SettingsMenu.jsx'
 
-// 顶部功能栏：左侧「目录切换图标 + 设置图标」，右侧「上一页 / 下一页」
+// 品牌区占位 logo（简笔书本图形）。TODO: 待正式设计稿完成后替换此处。
+function LogoPlaceholder() {
+  return (
+    <svg
+      className="brand-logo"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  )
+}
+
+// 顶部功能栏：左侧「logo + 应用名 + 目录切换图标 + 设置图标」，
+// 右侧「上一页 / 下一页 + 书名章节 + 窗口控制（最小化/最大化/关闭）」
 export default function Toolbar({
   tocOpen,
   onToggleToc,
@@ -24,6 +55,9 @@ export default function Toolbar({
   onToggleWindowFullscreen,
   windowFullscreen,
   onQuit,
+  onMinimize,
+  onToggleMaximize,
+  maximized,
   fixing,
   location,
   loading,
@@ -44,6 +78,12 @@ export default function Toolbar({
   return (
     <header className="toolbar">
       <div className="toolbar-left">
+        {/* 品牌区：占位 logo + 应用名（非交互区域，可作窗口拖拽区） */}
+        <div className="brand" title="BookLoft 书阁">
+          <LogoPlaceholder />
+          <span className="brand-name">书阁阅读器</span>
+        </div>
+
         <button
           className="icon-btn"
           onClick={onToggleToc}
@@ -123,6 +163,34 @@ export default function Toolbar({
             {chapterTitle ? ` - ${chapterTitle}` : ''}
           </span>
         )}
+
+        {/* 自绘窗口控制：最小化 / 最大化(恢复) / 关闭（无边框窗口） */}
+        <div className="win-controls">
+          <button
+            className="win-btn"
+            onClick={onMinimize}
+            title="最小化"
+            aria-label="最小化"
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            className="win-btn"
+            onClick={onToggleMaximize}
+            title={maximized ? '向下还原' : '最大化'}
+            aria-label={maximized ? '向下还原' : '最大化'}
+          >
+            {maximized ? <Copy size={13} /> : <Square size={13} />}
+          </button>
+          <button
+            className="win-btn close"
+            onClick={onQuit}
+            title="关闭"
+            aria-label="关闭"
+          >
+            <X size={17} />
+          </button>
+        </div>
       </div>
 
       {/* 菜单展开时铺一层透明遮罩：覆盖整窗（含正文 iframe），

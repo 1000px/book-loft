@@ -39,6 +39,16 @@ function createWindow() {
     mainWindow.show()
   })
 
+  // 最大化状态变化时广播给渲染层（同步顶栏"最大化/恢复"按钮图标）。
+  // 覆盖所有改变窗口状态的途径（按钮点击、Win+↑ 等）。
+  const sendMaximized = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('win:maximized-changed', mainWindow.isMaximized())
+    }
+  }
+  mainWindow.on('maximize', sendMaximized)
+  mainWindow.on('unmaximize', sendMaximized)
+
   if (isDev) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     mainWindow.webContents.openDevTools({ mode: 'detach' })
@@ -314,6 +324,27 @@ ipcMain.handle('app:toggleFullscreen', () => {
   const next = !mainWindow.isFullScreen()
   mainWindow.setFullScreen(next)
   return next
+})
+
+// IPC: 自绘标题栏窗口控制（最小化 / 最大化-恢复；关闭走 app:quit）。
+ipcMain.on('win:minimize', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize()
+  }
+})
+
+ipcMain.handle('win:toggleMaximize', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize()
+    return false
+  }
+  mainWindow.maximize()
+  return true
+})
+
+ipcMain.handle('win:isMaximized', () => {
+  return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized())
 })
 
 // IPC: 退出应用（设置菜单 -> 退出）。

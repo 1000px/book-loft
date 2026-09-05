@@ -132,6 +132,18 @@ export default function App() {
   const [immersive, setImmersive] = useState(false)
   // 窗口是否处于系统全屏（界面全屏/沉浸模式共用）：决定设置菜单显示"界面全屏"还是"退出全屏"
   const [windowFullscreen, setWindowFullscreen] = useState(false)
+  // 窗口是否最大化（自绘窗口控制按钮的"最大化/恢复"图标切换）：
+  // 启动时查询一次，之后监听主进程广播，保证与真实窗口状态始终同步
+  const [maximized, setMaximized] = useState(false)
+  useEffect(() => {
+    const api = window.bookloftAPI
+    if (typeof api?.isMaximized === 'function') {
+      api.isMaximized().then((v) => setMaximized(!!v)).catch(() => {})
+    }
+    if (typeof api?.onMaximizedChanged === 'function') {
+      return api.onMaximizedChanged((v) => setMaximized(!!v))
+    }
+  }, [])
   // 进入沉浸模式前的阅读模式，退出时恢复（保证普通模式体验不变）
   const prevModeRef = useRef('scrolled-doc')
 
@@ -370,6 +382,15 @@ export default function App() {
   const handleQuit = useCallback(() => {
     const api = window.bookloftAPI
     if (api && typeof api.quitApp === 'function') api.quitApp()
+  }, [])
+
+  // 自绘窗口控制：最小化 / 最大化(恢复)。关闭直接复用 handleQuit。
+  const handleMinimize = useCallback(() => {
+    window.bookloftAPI?.minimizeWindow?.()
+  }, [])
+
+  const handleToggleMaximize = useCallback(() => {
+    window.bookloftAPI?.toggleMaximize?.().catch(() => {})
   }, [])
 
   const handleNavigate = useCallback(async (target) => {
@@ -618,6 +639,9 @@ export default function App() {
         onToggleWindowFullscreen={handleToggleWindowFullscreen}
         windowFullscreen={windowFullscreen}
         onQuit={handleQuit}
+        onMinimize={handleMinimize}
+        onToggleMaximize={handleToggleMaximize}
+        maximized={maximized}
         fixing={fixing}
         location={location}
         loading={loading}

@@ -159,7 +159,8 @@ body {
 .toolbar .text-btn,
 .toolbar .theme-option,
 .toolbar .mode-option,
-.toolbar .menu-item {
+.toolbar .menu-item,
+.toolbar .win-controls {
   -webkit-app-region: no-drag;
 }
 
@@ -177,17 +178,78 @@ body {
   gap: 10px;
 }
 
-/* 右上角：当前书名 / 章节名（14px，过长省略号截断，避免挤压翻页按钮） */
+/* 右上角：当前书名 / 章节名（14px，过长省略号截断，避免挤压右侧窗口控制按钮） */
 .now-reading {
   font-size: 14px;
   line-height: 1;
   color: var(--text-1);
-  max-width: 42vw;
+  max-width: 36vw;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   user-select: none;
   -webkit-app-region: no-drag;
+}
+
+/* ===== 顶栏品牌区：占位 logo + 应用名 =====
+   logo 为占位图形（Toolbar.jsx 内 LogoPlaceholder），待正式设计稿替换。
+   非交互区域，保持可拖拽（不设 no-drag），扩大窗口拖拽热区。 */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  padding-left: 2px;
+  user-select: none;
+}
+
+.brand-logo {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.brand-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* ===== 自绘窗口控制（无边框窗口）：最小化 / 最大化(恢复) / 关闭 =====
+   默认极低调（text-3 级灰），hover 才浮现底色；关闭 hover 红，符合系统直觉。 */
+.win-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.win-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.win-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+.win-btn.close:hover {
+  background: #e5484d;
+  color: #ffffff;
 }
 
 /* 图标按钮：幽灵风格，hover 才出现底色，保持顶栏清爽 */
