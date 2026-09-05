@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import ePub from 'epubjs'
+import ePub, { EpubCFI } from 'epubjs'
 import { FONT_SIZE_DEFAULT } from '../config'
 import { looksLikeCover, applyCoverFit } from '../cover'
 import { getAnnotationPalette } from '../annotationColors'
@@ -191,6 +191,19 @@ const CHAPTER_END_CSS = `
   }
 `
 
+// 是否有模态弹框正在打开（自定义确认框 / 应用内目录选择器）。
+// 弹框打开时，键盘 ESC 与鼠标点击都应归属弹框自己处理，Reader 的
+// 「ESC 退出沉浸」「点外部收起标注浮层」必须让路，否则会出现
+// 「取消删除却顺带退出了全屏阅读」这类误伤。
+// 用 DOM 探测而非跨组件状态，避免给 Reader 增加新的 prop 依赖。
+function isModalOpen() {
+  try {
+    return !!document.querySelector('.confirm-overlay, .dirpicker-overlay')
+  } catch (_) {
+    return false
+  }
+}
+
 // 在 book.navigation.toc 里按 href 找到最长前缀匹配的章节（用于标注记录章节名/锚点）
 function findChapterByHref(href, book) {
   if (!href || !book?.navigation?.toc) return { title: '', href: '' }
@@ -322,7 +335,13 @@ export default function Reader({
   onRelocated,
   onLoadingChange,
   onError,
-  onEscape
+  onEscape,
+  // 窗口最大化 / 界面全屏状态：用于在主进程 IPC `win:maximized-changed`
+  // 触发 React setState 时，主动让 attemptResize 重新校准 epub.js 视口尺寸。
+  // Windows 上 window.resize 事件有时不会随 maximize 触发（依赖 Electron 版本
+  // 与窗口动画），必须显式响应状态变化，否则正文会停留在旧尺寸。
+  windowFullscreen = false,
+  maximized = false
 }) {
   const containerRef = useRef(null)
   const bookRef = useRef(null)
@@ -339,6 +358,30 @@ export default function Reader({
   // 章尾"下一章"按钮的点击处理（由下方 effect 填充，
   // iframe 内按钮通过此 ref 调用主窗口的跳章逻辑）
   const goNextRef = useRef(null)
+
+  // 全局吞掉 epub.js 内部的 DOMException unhandled rejection。
+  // epub.js 的 DefaultViewManager.display 在 add().then(view.locationOf(target))
+  // 同步抛 Range.setEnd 越界时，displayed promise 既不 resolve 也不 reject
+  // （错误回调只在 add reject 时触发，对 success 回调里的异常不生效），
+  // → 异常作为 unhandled promise rejection 冒到控制台。
+  // 我们已经让 jumpToAnnoSafe 完全走 chapterHref 路径绕开 locationOf，
+  // 但仍要兜底——如有任何 epub.js 内部的 Range/CFI 异常冒出来，
+  // 全部静默吞掉（业务侧走 relocated 事件判断跳转是否成功）。
+  useEffect(() => {
+    function onUnhandledRejection(ev) {
+        const e = ev.reason
+        if (!e) return
+        const name = e.name || ''
+        const msg = e.message || String(e)
+        if (name === 'DOMException' || /no child at offset/i.test(msg)) {
+          console.warn('[Reader] suppressed epub.js unhandled:', msg)
+          ev.preventDefault()
+        }
+      }
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+    return () =>
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+  }, [])
   // ESC 退出沉浸模式的回调（iframe 内按键经 content hook 转发到这里）
   const onEscapeRef = useRef(onEscape)
   onEscapeRef.current = onEscape
@@ -576,7 +619,12 @@ export default function Reader({
           const doc = contents && contents.document
           if (!doc) return
           doc.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') onEscapeRef.current?.()
+            // 有模态弹框打开时（确认框 / 目录选择器），ESC 归弹框自己处理，
+            // 不能顺带退出沉浸模式——否则"取消删除"会误退出全屏阅读。
+            if (e.key === 'Escape') {
+              if (isModalOpen()) return
+              onEscapeRef.current?.()
+            }
           })
         } catch (_) {}
       })
@@ -786,7 +834,352 @@ export default function Reader({
           console.log('[Reader] display succeeded, calling onReady')
           // 渲染完成后再回调 onReady，确保工具栏/目录拿到可用 rendition
           const toc = flattenToc(book.navigation.toc)
-          onReady?.({ book, rendition, toc })
+
+          // —— 把 jumpToAnnoSafe 挂到 rendition 上，供 App 层通过 ref 调用 ——
+          //
+          // 真正的根因 + 修复：
+          // epub.js 的 DefaultViewManager.display()（lib/managers/default/index.js
+          // L284-303）在 `this.add(section).then(view => view.locationOf(target))`
+          // 里同步抛 DOMException（如 `Range.setEnd: no child at offset 16`）
+          // 时，**displayed promise 既不 resolve 也不 reject**——错误处理回调
+          // `err => displaying.reject(err)` 第二个参数只有在 add() reject 时
+          // 才调用，对 success 回调里抛出的异常不生效。表现为：
+          //   - rendition.display() 永远 pending
+          //   - `relocated` 永不触发
+          //   - DOMException 作为 unhandled promise rejection 冒到控制台
+          //   - 我前一轮的 manager.clear() 让 display 强制走 add 路径
+          //     → 反而 100% 命中这条坏链
+          //
+          // 修复策略：**彻底绕开 DefaultViewManager 的 CFI target 路径**。
+          //   1. display(chapterHref) 时 epub.js 内部把 target 转 undefined
+          //      （见 L249-251：`target === section.href` → target = undefined），
+          //      走 `clear() + add(section) + no locationOf` 完整挂载路径，
+          //      displayed promise 会正常 resolve / reject。
+          //   2. 等 relocated 事件后，章节 DOM 已挂载到 iframe，单独用
+          //      `new EpubCFI(cfi).toRange(doc)` 在 try/catch 里解析 CFI——
+          //      即便 CFI 偏移越界也只影响这一次解析，不会污染 display 链。
+          //   3. 解析成功 → `el.scrollIntoView` 滚动到标记位置；解析失败
+          //      → 静默停留在章节首，至少能定位到大致位置。
+          const queue = [] // 单飞链：每次 jump 等上一次完全落幕
+          let running = Promise.resolve()
+          rendition.jumpToAnnoSafe = (anno) => {
+            if (!anno) return Promise.resolve({ ok: false, reason: 'no anno' })
+            const job = running.then(async () => {
+              const RELOCATED_TIMEOUT_MS = 2500
+              const SCROLL_TIMEOUT_MS = 800
+              const waitForRelocated = () =>
+                new Promise((resolve) => {
+                  let done = false
+                  const onRelocated = (loc) => {
+                    if (done) return
+                    done = true
+                    clearTimeout(timer)
+                    rendition.off('relocated', onRelocated)
+                    resolve({ ok: true, location: loc })
+                  }
+                  const timer = setTimeout(() => {
+                    if (done) return
+                    done = true
+                    rendition.off('relocated', onRelocated)
+                    resolve({ ok: false, reason: 'timeout' })
+                  }, RELOCATED_TIMEOUT_MS)
+                  rendition.on('relocated', onRelocated)
+                })
+              const chapterHref = anno.chapterHref
+                ? String(anno.chapterHref).split('#')[0]
+                : ''
+              if (!chapterHref) {
+                console.warn('[Reader.jump] no chapterHref, give up')
+                return { ok: false, reason: 'no chapter' }
+              }
+              // ----- Step 1：按章节 href 跳（绕开 CFI target 路径） -----
+              console.log('[Reader.jump] display chapter:', chapterHref)
+              const relocatedWait = waitForRelocated()
+              let displayErr = null
+              try {
+                await rendition.display(chapterHref)
+              } catch (err) {
+                displayErr = err
+                rendition.off('relocated')
+              }
+              if (displayErr) {
+                console.warn(
+                  '[Reader.jump] display rejected',
+                  displayErr?.message || displayErr
+                )
+                return { ok: false, reason: 'display rejected' }
+              }
+              const r = await relocatedWait
+              if (!r.ok) {
+                console.warn('[Reader.jump] relocated timeout')
+                return { ok: false, reason: 'relocated timeout' }
+              }
+              console.log('[Reader.jump] chapter loaded')
+              // ----- Step 2：章节挂载好后，定位标记位置并滚动 -----
+              // 三级降级：point CFI → 原始 CFI → selectedText 文本搜索
+              const located = await locateAndScroll(
+                rendition,
+                anno,
+                SCROLL_TIMEOUT_MS
+              )
+              if (!located.ok) {
+                console.log(
+                  '[Reader.jump] locate failed (' +
+                    located.how +
+                    '), staying at chapter head'
+                )
+              }
+              return { ok: true, kind: 'chapterHref+locate', how: located.how }
+            })
+            running = job.then(() => undefined, () => undefined)
+            return job
+          }
+
+          // 在已挂载的章节 iframe 里定位标记位置并滚动。
+          //
+          // 三级降级，每级都 try/catch 包死，**绝不冒泡到 epub.js Promise 链**
+          // （这才是杜绝 unhandled rejection 的关键）：
+          //   1. **point CFI** —— 把 range CFI 的 start 段合并进 path 并置
+          //      `range = false`，toRange 只走 setStart 分支，**完全不碰
+          //      setEnd** → 绕开 `Range.setEnd: no child at offset N`。
+          //   2. 原始 range CFI（保留 setEnd，兼容本来就能解析的情况）。
+          //   3. **selectedText DOM 文本搜索** —— CFI 全废时的兜底。用
+          //      TreeWalker 收集全部 text node 拼成整章文本做 indexOf，
+          //      命中即 collapse 到该位置。这是最鲁棒的一级。
+          //
+          // Q: 为什么部分 CFI 会解析失败、部分是好的（用户现象：1/5 对，
+          //    2/3/4 错）？
+          // A: epub.js `fromRange` 生成 range CFI 时，end 段的 terminal
+          //    offset 语义与容器实际类型可能不匹配——字符偏移被当成子节点
+          //    索引写入，`Range.setEnd(container, N)` 就抛 "no child at
+          //    offset N"；catch 里 `fixMiss` 兜底若再次越界，异常直接冒泡。
+          //    哪些标记踩中取决于选区结束点落在哪个元素上，所以表现为
+          //    "一部分好、一部分坏"。
+          function locateAndScroll(rendition, anno, timeoutMs) {
+            return new Promise((resolve) => {
+              let done = false
+              const timer = setTimeout(() => {
+                console.warn('[Reader.jump] locateAndScroll timeout')
+                finish(false, 'timeout')
+              }, timeoutMs)
+              const finish = (ok, how) => {
+                if (done) return
+                done = true
+                clearTimeout(timer)
+                resolve({ ok, how })
+              }
+
+              try {
+                const contentsList =
+                  typeof rendition.manager?.getContents === 'function'
+                    ? rendition.manager.getContents()
+                    : []
+                const contents = contentsList[0]
+                const doc = contents?.document
+                if (!doc) {
+                  console.warn('[Reader.jump] no contents.document')
+                  return finish(false, 'no-doc')
+                }
+                const ignoreClass = rendition.settings?.ignoreClass
+
+                // 策略 1：point CFI（绕开 setEnd，首选）
+                if (anno.cfiStart) {
+                  const r1 = tryCfiPoint(doc, anno.cfiStart, ignoreClass)
+                  if (r1) return doScroll(rendition, contents, r1, 'pointCfi', finish)
+                }
+                // 策略 2：原始 range CFI
+                if (anno.cfiStart) {
+                  const r2 = tryCfiRaw(doc, anno.cfiStart, ignoreClass)
+                  if (r2) return doScroll(rendition, contents, r2, 'rawCfi', finish)
+                }
+                // 策略 3：selectedText 文本搜索（最鲁棒）
+                if (anno.selectedText) {
+                  const r3 = tryTextSearch(doc, anno.selectedText)
+                  if (r3) return doScroll(rendition, contents, r3, 'textSearch', finish)
+                }
+                console.warn('[Reader.jump] all locate strategies failed')
+                return finish(false, 'all-failed')
+              } catch (e) {
+                console.warn('[Reader.jump] locate exception:', e?.message || e)
+                return finish(false, 'exception')
+              }
+            })
+          }
+
+          // 策略 1：range CFI → point CFI。
+          // toRange 在 `cfi.range === true` 时做 setStart + setEnd（setEnd
+          // 会越界抛错）；把 start 段 merge 进 path 并置 range=false，
+          // 就只走 `else` 分支的 setStart，安全。
+          function tryCfiPoint(doc, cfiStr, ignoreClass) {
+            try {
+              const cfi = new EpubCFI(cfiStr)
+              if (cfi.range && cfi.start) {
+                cfi.path = {
+                  steps: [
+                    ...(cfi.path?.steps || []),
+                    ...(cfi.start.steps || [])
+                  ],
+                  terminal: cfi.start.terminal ?? null
+                }
+                cfi.range = false
+                cfi.start = null
+                cfi.end = null
+              }
+              return cfi.toRange(doc, ignoreClass)
+            } catch (e) {
+              console.warn('[Reader.jump] pointCfi failed:', e?.message || e)
+              return null
+            }
+          }
+
+          // 策略 2：原始 range CFI（保留 setEnd 语义）
+          function tryCfiRaw(doc, cfiStr, ignoreClass) {
+            try {
+              return new EpubCFI(cfiStr).toRange(doc, ignoreClass)
+            } catch (e) {
+              console.warn('[Reader.jump] rawCfi failed:', e?.message || e)
+              return null
+            }
+          }
+
+          // 策略 3：selectedText DOM 文本搜索。
+          // TreeWalker 收集全部 text node 拼整章文本做 indexOf：
+          //   先精确匹配（偏移精确），失败再空白规整匹配（兼容跨节点/换行差异）。
+          function tryTextSearch(doc, needle) {
+            try {
+              const target = String(needle || '').trim()
+              const root = doc.body || doc.documentElement
+              if (!target || !root) return null
+
+              const SHOW_TEXT = 4 // NodeFilter.SHOW_TEXT
+              const walker = doc.createTreeWalker(root, SHOW_TEXT, null)
+              const nodes = []
+              let n
+              while ((n = walker.nextNode())) {
+                if (n.textContent) nodes.push(n)
+              }
+              if (!nodes.length) return null
+
+              const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+              const normTarget = norm(target)
+
+              // 双空间累加：rawFull（原始，偏移精确）+ normFull（规整，容错）
+              let rawFull = ''
+              let normFull = ''
+              const spans = []
+              for (const node of nodes) {
+                const raw = node.textContent || ''
+                const nz = norm(raw)
+                spans.push({
+                  node,
+                  rawStart: rawFull.length,
+                  rawEnd: rawFull.length + raw.length,
+                  normStart: normFull.length,
+                  normEnd: normFull.length + nz.length
+                })
+                rawFull += raw
+                normFull += nz
+              }
+
+              let idx = rawFull.indexOf(target)
+              let useNorm = false
+              if (idx < 0) {
+                idx = normFull.indexOf(normTarget)
+                useNorm = true
+              }
+              if (idx < 0) {
+                console.warn('[Reader.jump] text not found in chapter')
+                return null
+              }
+
+              for (const s of spans) {
+                const st = useNorm ? s.normStart : s.rawStart
+                const en = useNorm ? s.normEnd : s.rawEnd
+                if (idx < st || idx >= en) continue
+                const maxOff = s.node.textContent ? s.node.textContent.length : 0
+                // 规整匹配时偏移不精确，直接落到该 text node 起点
+                const off = useNorm
+                  ? 0
+                  : Math.max(0, Math.min(idx - st, maxOff))
+                try {
+                  const r = doc.createRange()
+                  r.setStart(s.node, off)
+                  r.collapse(true)
+                  return r
+                } catch (e) {
+                  // setStart 也可能失败 → 退化为选中整个 text node 内容
+                  try {
+                    const r2 = doc.createRange()
+                    r2.selectNodeContents(s.node)
+                    return r2
+                  } catch (e2) {
+                    return null
+                  }
+                }
+              }
+              return null
+            } catch (e) {
+              console.warn('[Reader.jump] textSearch failed:', e?.message || e)
+              return null
+            }
+          }
+
+          // 把定位到的 Range 滚进视口。
+          //
+          // 双保险滚动：
+          //   方式 1 —— `el.scrollIntoView()`：简单，多数场景有效。
+          //   方式 2 —— 手动坐标换算兜底：scrollIntoView 在 iframe 内调用时，
+          //     若 iframe 是"全高不滚动"（scrolled-doc 下 epub.js 把真实
+          //     滚动放在外层 container 上），它可能滚不动或滚错。
+          //     此时换算：元素在 iframe 内容坐标 → 主窗口坐标 → 相对外层
+          //     容器顶部的 delta，直接改 `container.scrollTop`。
+          function doScroll(rendition, contents, range, how, finish) {
+            try {
+              const node = range.startContainer
+              const el =
+                node && node.nodeType === 1 ? node : node && node.parentElement
+              if (!el) {
+                console.warn('[Reader.jump] no scrollable element')
+                return finish(false, how + ':no-el')
+              }
+              // rAF 包一层，确保 DOM 已 layout
+              requestAnimationFrame(() => {
+                try {
+                  const container = rendition.manager?.container
+                  const before = container ? container.scrollTop : -1
+
+                  if (typeof el.scrollIntoView === 'function') {
+                    el.scrollIntoView({ block: 'start', behavior: 'auto' })
+                  }
+
+                  // 外层容器没动 → 手动换算坐标滚动
+                  if (container && container.scrollTop === before) {
+                    const iframeWin = contents?.window
+                    const iframeEl = iframeWin && iframeWin.frameElement
+                    if (iframeEl) {
+                      const rect = el.getBoundingClientRect() // iframe 内容坐标
+                      const ir = iframeEl.getBoundingClientRect() // iframe 在主窗口位置
+                      const cr = container.getBoundingClientRect() // 容器在主窗口位置
+                      const delta = ir.top + rect.top - cr.top
+                      if (Number.isFinite(delta) && Math.abs(delta) > 1) {
+                        container.scrollTop += delta
+                      }
+                    }
+                  }
+                  console.log('[Reader.jump] scrolled via', how)
+                  finish(true, how)
+                } catch (e) {
+                  console.warn('[Reader.jump] scrollIntoView failed:', e)
+                  finish(false, how + ':scroll-failed')
+                }
+              })
+            } catch (e) {
+              console.warn('[Reader.jump] doScroll failed:', e?.message || e)
+              finish(false, how + ':exception')
+            }
+          }
+
+        onReady?.({ book, rendition, toc })
         })
         .catch((err) => {
           if (cancelled) return
@@ -889,7 +1282,10 @@ export default function Reader({
       if (winTimer) clearTimeout(winTimer)
       window.removeEventListener('resize', onWindowResize)
     }
-  }, [bookReady, tocOpen, immersive])
+    // 触发器：bookReady 加载完毕、tocOpen 目录栏宽度过渡、
+    // immersive 顶栏显示、maximized/windowFullscreen 窗口尺寸改变。
+    // Windows 上 maximize 不一定触发原生 resize，所以必须把状态变化加进 deps。
+  }, [bookReady, tocOpen, immersive, maximized, windowFullscreen])
 
   // 字号变化：应用主题 override 并重新定位到当前阅读位置。
   // 字号变化会改变分页列数/滚动高度，必须用当前 CFI 重新 mapping，
@@ -999,12 +1395,16 @@ export default function Reader({
     }
     function onMouseDown(e) {
       const target = e.target
+      // 有模态弹框打开时（确认框 / 目录选择器），点击归属弹框，
+      // 不要顺手把标注浮层也收了。
+      if (isModalOpen()) return
       if (target && target.closest && target.closest('.bookloft-popover')) return
       if (isEditable(target)) return
       setPickState(null)
     }
     function onKey(e) {
-      if (e.key === 'Escape') setPickState(null)
+      // ESC 同理：弹框打开时交给弹框处理
+      if (e.key === 'Escape' && !isModalOpen()) setPickState(null)
     }
     document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('keydown', onKey)

@@ -16,7 +16,8 @@ import {
   listAnnotations,
   createAnnotation,
   updateAnnotation,
-  deleteAnnotation
+  deleteAnnotation,
+  deleteAnnotations
 } from './db.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -152,6 +153,17 @@ ipcMain.handle('annotations:delete', (_event, id) => {
   } catch (err) {
     console.error('[db] annotation delete failed:', err)
     return false
+  }
+})
+
+// 批量删除（笔记管理抽屉专用）：一次 SQL 搞定，ids 是 id 数组。
+// 返回实际删除条数（0 表示 ids 无效）。失败返回 -1。
+ipcMain.handle('annotations:deleteMany', (_event, ids) => {
+  try {
+    return deleteAnnotations(ids)
+  } catch (err) {
+    console.error('[db] annotation bulk delete failed:', err)
+    return -1
   }
 })
 

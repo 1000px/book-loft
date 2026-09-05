@@ -43,5 +43,7 @@ contextBridge.exposeInMainWorld('bookloftAPI', {
   listAnnotations: (bookPath) => ipcRenderer.invoke('annotations:list', bookPath),
   createAnnotation: (data) => ipcRenderer.invoke('annotations:create', data),
   updateAnnotation: (id, patch) => ipcRenderer.invoke('annotations:update', id, patch),
-  deleteAnnotation: (id) => ipcRenderer.invoke('annotations:delete', id)
+  deleteAnnotation: (id) => ipcRenderer.invoke('annotations:delete', id),
+  // 批量删除（笔记管理抽屉专用）：ids=id 数组，返回实际删除条数（-1 表示失败）
+  deleteAnnotations: (ids) => ipcRenderer.invoke('annotations:deleteMany', ids)
 })

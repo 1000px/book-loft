@@ -10,7 +10,8 @@ import {
   Wrench,
   Maximize,
   Expand,
-  Shrink
+  Shrink,
+  NotebookPen
 } from 'lucide-react'
 import {
   THEME_ORDER,
@@ -32,6 +33,8 @@ export default function SettingsMenu({
   onModeChange,
   onOpenWorkingDir,
   onFixToc,
+  onToggleNotes,
+  notesOpen = false,
   onFullscreen,
   onToggleWindowFullscreen,
   windowFullscreen = false,
@@ -147,6 +150,16 @@ export default function SettingsMenu({
       >
         <Wrench size={15} />
         目录更正
+      </button>
+      <button
+        className={`menu-item ${notesOpen ? 'active' : ''}`}
+        onClick={() => { onToggleNotes?.(); onClose?.() }}
+        disabled={!onToggleNotes}
+        role="menuitem"
+        title={onToggleNotes ? (notesOpen ? '收起笔记管理面板' : '查看当前书籍全部高亮/划线/批注/笔记，可批量删除或定位到正文') : '请先打开一本书'}
+      >
+        <NotebookPen size={15} />
+        {notesOpen ? '收起笔记管理' : '笔记管理'}
       </button>
       <button
         className="menu-item"

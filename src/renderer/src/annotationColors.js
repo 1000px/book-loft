@@ -7,6 +7,10 @@
 // - 渲染层在创建标注时落库 { style: key, color: bg }，恢复时按当前主题重新算色值
 //   （不做主题感知：色值已是绝对 rgba，重启后用主题色覆盖可换肤）
 
+// 划线：用户设计偏好——实线 / 虚线都按主题明暗自适应选色。
+// - 浅主题（light / green / ink 底色偏亮、文字偏深）：下划线用黑色，确保对比度。
+// - 深主题（dark 底色暗、文字亮）：下划线用白色，保持可见。
+// - 实线与虚线颜色一致，靠线型本身区分（克制、一致的视觉语言）。
 const PALETTES = {
   light: {
     highlights: [
@@ -16,8 +20,8 @@ const PALETTES = {
       { key: 'c4', bg: 'rgba(100, 181, 246, 0.55)', fg: '#0a2f66' }, // 天蓝
       { key: 'c5', bg: 'rgba(186, 104, 200, 0.50)', fg: '#3a0a4d' }  // 紫罗兰
     ],
-    underlineSolid:   'rgba(217, 119,   6, 0.95)', // 琥珀
-    underlineDashed:  'rgba(192,  38,  79, 0.95)'  // 玫红
+    underlineSolid:   'rgba(0,   0,   0, 0.95)', // 黑
+    underlineDashed:  'rgba(0,   0,   0, 0.95)'  // 黑
   },
   green: {
     highlights: [
@@ -27,8 +31,8 @@ const PALETTES = {
       { key: 'c4', bg: 'rgba(128, 203, 196, 0.65)', fg: '#0d3a3a' },
       { key: 'c5', bg: 'rgba(202, 169, 221, 0.60)', fg: '#321a4d' }
     ],
-    underlineSolid:   'rgba(217, 119,   6, 0.95)',
-    underlineDashed:  'rgba(160,  46,  46, 0.95)'
+    underlineSolid:   'rgba(0,   0,   0, 0.95)', // 黑
+    underlineDashed:  'rgba(0,   0,   0, 0.95)'  // 黑
   },
   dark: {
     highlights: [
@@ -38,8 +42,8 @@ const PALETTES = {
       { key: 'c4', bg: 'rgba(100, 181, 246, 0.32)', fg: '#a8caf6' },
       { key: 'c5', bg: 'rgba(186, 104, 200, 0.32)', fg: '#d6a8e6' }
     ],
-    underlineSolid:   'rgba(255, 202,  87, 0.95)',
-    underlineDashed:  'rgba(239, 154, 154, 0.95)'
+    underlineSolid:   'rgba(255, 255, 255, 0.95)', // 白
+    underlineDashed:  'rgba(255, 255, 255, 0.95)'  // 白
   },
   ink: {
     highlights: [
@@ -49,8 +53,8 @@ const PALETTES = {
       { key: 'c4', bg: 'rgba( 96, 138, 196, 0.55)', fg: '#0f2a4d' },
       { key: 'c5', bg: 'rgba(154, 110, 174, 0.55)', fg: '#2f124d' }
     ],
-    underlineSolid:   'rgba(192, 102,  20, 0.95)',
-    underlineDashed:  'rgba(160,  44,  56, 0.95)'
+    underlineSolid:   'rgba(0,   0,   0, 0.95)', // 黑
+    underlineDashed:  'rgba(0,   0,   0, 0.95)'  // 黑
   }
 }
 

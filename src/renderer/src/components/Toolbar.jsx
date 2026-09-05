@@ -51,6 +51,8 @@ export default function Toolbar({
   onNext,
   onOpenWorkingDir,
   onFixToc,
+  onToggleNotes,
+  notesOpen,
   onFullscreen,
   onToggleWindowFullscreen,
   windowFullscreen,
@@ -126,6 +128,8 @@ export default function Toolbar({
               onModeChange={onModeChange}
               onOpenWorkingDir={onOpenWorkingDir}
               onFixToc={onFixToc}
+              onToggleNotes={onToggleNotes}
+              notesOpen={notesOpen}
               onFullscreen={onFullscreen}
               onToggleWindowFullscreen={onToggleWindowFullscreen}
               windowFullscreen={windowFullscreen}

@@ -251,3 +251,16 @@ export function deleteAnnotation(id) {
   db.prepare('DELETE FROM annotations WHERE id = ?').run(id)
   return true
 }
+
+// 批量删除标注（按 id 数组），一次 SQL 搞定；返回受影响行数（实际删掉的条数）。
+// ids 无效/空数组时返回 0。单个失败也不阻塞后续项。
+export function deleteAnnotations(ids) {
+  if (!db || !Array.isArray(ids) || ids.length === 0) return 0
+  const valid = ids.filter((id) => id != null && Number.isFinite(Number(id)))
+  if (!valid.length) return 0
+  const placeholders = valid.map(() => '?').join(',')
+  const info = db
+    .prepare(`DELETE FROM annotations WHERE id IN (${placeholders})`)
+    .run(...valid)
+  return info.changes || 0
+}

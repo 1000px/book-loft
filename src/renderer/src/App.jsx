@@ -4,6 +4,8 @@ import Toolbar from './components/Toolbar.jsx'
 import TOC from './components/TOC.jsx'
 import DirPicker from './components/DirPicker.jsx'
 import LibraryHome from './components/LibraryHome.jsx'
+import NotesDrawer from './components/NotesDrawer.jsx'
+import ConfirmDialog from './components/ConfirmDialog.jsx'
 import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_MIN,
@@ -154,6 +156,47 @@ export default function App() {
   const [initialCfi, setInitialCfi] = useState('')
   // 标注（高亮/划线/标注/笔记）：随 filePath 变化从 DB 加载
   const [annotations, setAnnotations] = useState([])
+  // 笔记管理抽屉：true=已从右侧滑出显示（collapsed 子状态由 NotesDrawer 内部控制）
+  const [notesOpen, setNotesOpen] = useState(false)
+
+  // —— 自定义确认框状态（替代原生 confirm / alert）——
+  // confirmState: null=关闭；否则为 { message, detail, confirmText, cancelText, alertOnly }
+  // confirmResolveRef 保存当前 pending 的 Promise resolve，用户点击后兑现。
+  const [confirmState, setConfirmState] = useState(null)
+  const confirmResolveRef = useRef(null)
+
+  // 弹出确认框，await 返回 true=确认 / false=取消。用法等同 window.confirm。
+  const requestConfirm = useCallback(
+    ({ message, detail, confirmText, cancelText, alertOnly = false }) =>
+      new Promise((resolve) => {
+        // 若已有弹框在等待，先兑现旧的（避免 resolve 泄漏导致调用方永久挂起）
+        confirmResolveRef.current?.(false)
+        confirmResolveRef.current = resolve
+        setConfirmState({
+          message: message || '确认执行该操作？',
+          detail: detail || '',
+          confirmText: confirmText || '确认删除',
+          cancelText: cancelText || '取消',
+          alertOnly
+        })
+      }),
+    []
+  )
+
+  // 单按钮提示（替代原生 alert）。await 只是等用户关闭。
+  const showAlert = useCallback(
+    (message, detail) =>
+      requestConfirm({ message, detail, alertOnly: true }),
+    [requestConfirm]
+  )
+
+  // 用户点击确认 / 取消：兑现 Promise 并关闭弹框
+  const settleConfirm = useCallback((ok) => {
+    const resolve = confirmResolveRef.current
+    confirmResolveRef.current = null
+    setConfirmState(null)
+    resolve?.(ok)
+  }, [])
 
   // 保存 rendition 引用以便工具栏翻页 / 目录跳转
   const renditionRef = useRef(null)
@@ -231,6 +274,9 @@ export default function App() {
       setAnnotations([])
       return
     }
+    // 切书瞬间先清空 state，避免抽屉里短暂闪现上一本书的标注（抽屉按 filePath remount，
+    // 但 React state 更新异步，DB 回灌要一拍，这一步把"上一本残留窗口期"堵死）。
+    setAnnotations([])
     let cancelled = false
     const api = window.bookloftAPI
     if (typeof api?.listAnnotations !== 'function') return
@@ -262,38 +308,125 @@ export default function App() {
     []
   )
 
-  // 删除标注：先弹原生确认，避免误触；通过后再调 IPC + 更新本地 state。
-  // 弹窗放在主窗口（不放在 iframe 内），免得 iframe 内 window.confirm 被某些书内脚本
-  // 拦截或视觉割裂；浏览器原生 confirm 与 App 整体保持极简风格一致。
+  // 删除标注：先弹自定义确认框（ConfirmDialog，非原生 confirm），避免误触；
+  // 通过后再调 IPC + 更新本地 state。
   // 任何类型（高亮 / 划线 / 标注 / 笔记）的标注都可被删除——确认提示统一文案。
-  // 返回值：true=真删，false=confirm 取消 / 删除失败——Reader 据此决定是否同步关闭弹框。
-  const handleDeleteAnnotation = useCallback(async ({ id, type }) => {
-    if (id == null) return false
-    const api = window.bookloftAPI
-    if (typeof api?.deleteAnnotation !== 'function') return false
-    // 原生确认：阻塞直到用户点确认 / 取消
-    const typeLabel =
-      type === 'note'
-        ? '笔记'
-        : type === 'annotation'
-        ? '批注'
-        : type === 'underline'
-        ? '划线'
-        : type === 'highlight'
-        ? '高亮'
-        : '标注'
-    const ok = window.confirm(`确认删除该${typeLabel}？此操作不可撤销。`)
-    if (!ok) return false
+  // 返回值：true=真删，false=取消 / 删除失败——Reader 据此决定是否同步关闭弹框。
+  const handleDeleteAnnotation = useCallback(
+    async ({ id, type }) => {
+      if (id == null) return false
+      const api = window.bookloftAPI
+      if (typeof api?.deleteAnnotation !== 'function') return false
+      const typeLabel =
+        type === 'note'
+          ? '笔记'
+          : type === 'annotation'
+          ? '批注'
+          : type === 'underline'
+          ? '划线'
+          : type === 'highlight'
+          ? '高亮'
+          : '标注'
+      // 自定义确认框：await 直到用户点确认 / 取消
+      const ok = await requestConfirm({
+        message: `确认删除这条${typeLabel}？`,
+        detail: '删除后无法恢复，该标记也会从正文中一并移除。',
+        confirmText: '确认删除'
+      })
+      if (!ok) return false
+      try {
+        await api.deleteAnnotation(id)
+        setAnnotations((prev) => prev.filter((a) => String(a.id) !== String(id)))
+        return true
+      } catch (err) {
+        console.error('[App] 删除标注失败:', err)
+        showAlert('删除失败，请稍后重试。', err?.message || String(err))
+        return false
+      }
+    },
+    [requestConfirm, showAlert]
+  )
+
+  // 批量删除（笔记管理抽屉专用）：一次确认 + 一次 IPC，删完即从 state 过滤。
+  // ids 是 id 数组（已转字符串）；成功后通知 drawer 清空选中状态。
+  const handleBulkDeleteAnnotations = useCallback(
+    async (ids, onDone) => {
+      if (!Array.isArray(ids) || ids.length === 0) return
+      const api = window.bookloftAPI
+      if (typeof api?.deleteAnnotations !== 'function') {
+        // 缺批量接口时退化为逐个删除（防止依赖未就绪）
+        for (const id of ids) {
+          try {
+            await api.deleteAnnotation(id)
+          } catch (_) {}
+        }
+      } else {
+        const ok = await requestConfirm({
+          message: `确认删除选中的 ${ids.length} 项标记？`,
+          detail: '包含高亮、划线、批注与笔记，删除后无法恢复。',
+          confirmText: `删除 ${ids.length} 项`
+        })
+        if (!ok) return
+        try {
+          await api.deleteAnnotations(ids)
+        } catch (err) {
+          console.error('[App] 批量删除失败:', err)
+          showAlert('批量删除失败，请稍后重试。', err?.message || String(err))
+          return
+        }
+      }
+      const idSet = new Set(ids.map((x) => String(x)))
+      setAnnotations((prev) => prev.filter((a) => !idSet.has(String(a.id))))
+      onDone?.()
+    },
+    [requestConfirm, showAlert]
+  )
+
+  // 从笔记管理抽屉跳到某条标注所在正文位置。
+  //
+  // 真正的"safe jump"逻辑全部在 Reader.jsx 里实现，挂在 rendition
+  // 上的 `rendition.jumpToAnnoSafe(anno)`。App 层只是调用方，不重复实现。
+  //
+  // 该函数（Reader.jsx 内）解决根本性 bug：
+  // epub.js 的 DefaultViewManager.display() 在 `add(section).then(view.locationOf(target))`
+  // 同步抛 DOMException（如 `Range.setEnd: no child at offset N`）时，
+  // displayed promise 既不 resolve 也不 reject（错误回调只在 add reject 时
+  // 触发，对 success 回调里的异常不生效），DOMException 作为 unhandled
+  // rejection 冒到控制台，relocated 永不触发。
+  //
+  // 修复策略：完全绕开 DefaultViewManager 的 CFI target 路径——
+  //   1. 用 `rendition.display(chapterHref)` 加载章节（epub.js 内部会把
+  //      `target === section.href` 转为 undefined target，不走 locationOf）。
+  //   2. 等 relocated 事件后，章节 DOM 已挂载，单独用 `new EpubCFI(cfi).toRange(doc)`
+  //      在 try/catch 里解析 CFI + scrollIntoView 滚到标记位置。
+  //   3. Reader.jsx 顶部加全局 unhandledrejection 监听，
+  //      兜底吞掉任何残留的 epub.js DOMException（防止控制台噪音）。
+  const handleJumpToAnnotation = useCallback(async (anno) => {
+    const rendition = renditionRef.current
+    if (!rendition || !anno) return
     try {
-      await api.deleteAnnotation(id)
-      setAnnotations((prev) => prev.filter((a) => String(a.id) !== String(id)))
-      return true
+      const result =
+        (typeof rendition.jumpToAnnoSafe === 'function'
+          ? await rendition.jumpToAnnoSafe(anno)
+          : null)
+      if (result && result.ok && anno.chapterHref) {
+        setSelectedHref(String(anno.chapterHref))
+      }
     } catch (err) {
-      console.error('[App] 删除标注失败:', err)
-      alert('删除失败：' + (err?.message || String(err)))
-      return false
+      console.error('[App.jump] jumpToAnnoSafe threw:', err)
     }
   }, [])
+
+  // 笔记管理抽屉切换（设置菜单 -> 笔记管理）：无书时禁用并提示。
+  // 抽屉是 position:fixed 浮层，不挤压正文区。
+  // 二次进入依靠设置菜单的笔记管理按钮（toggle 行为）。
+  const handleToggleNotes = useCallback(() => {
+    if (!filePath) {
+      setError('笔记管理：请先打开一本电子书。')
+      return
+    }
+    setNotesOpen((v) => !v)
+  }, [filePath])
 
   // 以下为设置变化的持久化（booted 之前不写，避免用默认值覆盖数据库里的旧值）
   useEffect(() => {
@@ -707,6 +840,8 @@ export default function App() {
         onNext={handleNext}
         onOpenWorkingDir={handleOpenWorkingDir}
         onFixToc={handleFixToc}
+        onToggleNotes={handleToggleNotes}
+        notesOpen={notesOpen}
         onFullscreen={handleEnterImmersive}
         onToggleWindowFullscreen={handleToggleWindowFullscreen}
         windowFullscreen={windowFullscreen}
@@ -751,6 +886,8 @@ export default function App() {
             onLoadingChange={setLoading}
             onError={handleError}
             onEscape={handleExitImmersive}
+            windowFullscreen={windowFullscreen}
+            maximized={maximized}
           />
           {error && <div className="error-banner">{error}</div>}
           {notice && !error && <div className="notice-banner">{notice}</div>}
@@ -774,6 +911,33 @@ export default function App() {
         initialDir={workingDir}
         onCancel={() => setDirPickerOpen(false)}
         onPick={handleDirPicked}
+      />
+
+      {/* 笔记管理抽屉：右侧滑出浮层，position:fixed 不挤压正文区。
+          缩起 = 整体收起（无侧边窄条），再次进入走设置菜单的笔记管理按钮。
+          当文件路径变化时自动收起（旧书标注列表失去意义）——避免误以为是当前书的标注。 */}
+      <NotesDrawer
+        key={filePath || 'no-book'}
+        open={notesOpen}
+        bookTitle={displayBookTitle}
+        annotations={annotations}
+        onJump={handleJumpToAnnotation}
+        onBulkDelete={handleBulkDeleteAnnotations}
+        onClose={() => setNotesOpen(false)}
+      />
+
+      {/* 全局自定义确认框（替代原生 confirm / alert）。
+          由 requestConfirm / showAlert 驱动，await 返回用户选择。
+          z-index 高于标注浮层，删除标注时不会被浮层盖住。 */}
+      <ConfirmDialog
+        open={!!confirmState}
+        message={confirmState?.message}
+        detail={confirmState?.detail}
+        confirmText={confirmState?.confirmText}
+        cancelText={confirmState?.cancelText}
+        alertOnly={confirmState?.alertOnly}
+        onConfirm={() => settleConfirm(true)}
+        onCancel={() => settleConfirm(false)}
       />
     </div>
   )
